@@ -2,12 +2,15 @@
 
 CyberVault est un mini-jeu CTF **100 % fictif et légal** construit avec Next.js.
 
-## V1
-- 4 missions progressives
-- système de réponses et d'XP
-- progression sauvegardée dans le navigateur
-- coffre final
+## V2 — Audit Lab
+- 6 missions progressives
+- analyse de logs et puzzles crypto
+- failles **simulées** d’access control, logique, données de démonstration et validation d’entrée
+- fragments à reconstruire pour le coffre final
+- système de réponses et d’XP
+- progression sauvegardée localement
 - interface responsive sombre style cyber
+- aucun système réel, aucune API réelle et aucune cible externe
 
 ## Lancer en local
 
@@ -18,4 +21,4 @@ npm run dev
 
 Puis ouvrir `http://localhost:3000`.
 
-> Les défis simulent des puzzles de cybersécurité. Ils ne ciblent aucun système réel.
+> Les défis représentent des laboratoires fictifs isolés. Les snippets affichés sont uniquement des données de jeu et ne servent pas à cibler un système réel.
