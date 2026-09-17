@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 
-type FileItem = { path: string; kind: string; lines: string[] }
+type FileItem = { path: string; kind: string; lines: string[]; hidden?: boolean }
 type SearchHit = { file: FileItem; line: number; text: string }
 type Finding = { id: string; title: string; file: string; line: number; verdict: 'CONFIRMED' | 'FALSE POSITIVE'; reason: string; evidence: string[] }
 
@@ -17,6 +17,11 @@ const files: FileItem[] = [
   { path: 'logs/audit-001.sim', kind: 'LOG', lines: [...Array.from({ length: 18 }, (_, i) => `// ${String(i + 1).padStart(2, '0')} | audit event ${String(i + 1).padStart(3, '0')} | status=SIMULATED`),'19 | finding=DEBUG-12 note="debug branch visible" severity=medium',...Array.from({ length: 45 }, (_, i) => `// ${String(i + 20).padStart(2, '0')} | audit event ${String(i + 20).padStart(3, '0')} | status=SIMULATED`)] },
   { path: 'logs/audit-002.sim', kind: 'LOG', lines: [...Array.from({ length: 22 }, (_, i) => `// ${String(i + 1).padStart(2, '0')} | trace ${String(i + 1).padStart(3, '0')} | source=LAB`),'23 | finding=TRACE-04 note="role value appears in trace" severity=low',...Array.from({ length: 28 }, (_, i) => `// ${String(i + 24).padStart(2, '0')} | trace ${String(i + 24).padStart(3, '0')} | source=LAB`)] },
   { path: 'docs/notes/review.sim', kind: 'NOTE', lines: ['01 | REVIEW NOTE // do not trust isolated findings','02 | A finding is only useful when its effect is observable in expected behaviour.','03 | Compare implementation -> identity -> test.','04 | If the three disagree, investigate before declaring a vulnerability.','05 | NEXT-TRACE: AUTH-08 / analyst-01 / LAB','06 | NEXT-TRACE: compare the role source with the authorization branch.'] },
+  { path: '.lab/deep-index.sim', kind: 'HIDDEN', hidden: true, lines: ['01 | DEEP INDEX // hidden training artifact','02 | visibility=HIDDEN','03 | hint=the explorer is not the whole filesystem','04 | aliases: /ghost/index.sim / vault-map','05 | next=TRACE AUTH-08','06 | rule=hidden files appear only after a valid trace query'] },
+  { path: '.lab/trace-auth-08.sim', kind: 'HIDDEN', hidden: true, lines: ['01 | TRACE AUTH-08','02 | source=app/auth/check.sim:07','03 | identity=analyst-01','04 | expected=GRANTED','05 | crosscheck=tests/access.sim:06','06 | fragment=GHOST-41','07 | note=fragment alone is not the final answer'] },
+  { path: '.lab/archive/ghost-41.sim', kind: 'HIDDEN', hidden: true, lines: ['01 | ARCHIVE RECORD GHOST-41','02 | status=DECOY','03 | value=FALSE-LEAD','04 | instruction=do not submit this value','05 | cross-file clue=VAULT-MAP','06 | next=inspect the map, not the archive value'] },
+  { path: '.lab/vault-map.sim', kind: 'HIDDEN', lines: ['01 | VAULT MAP // training route','02 | AUTH-08 -> analyst-01 -> GRANTED','03 | GRANTED -> GHOST-41','04 | GHOST-41 -> DECOY','05 | DECOY -> search "VAULT-MAP"','06 | VAULT-MAP -> fragment=K-19','07 | K-19 -> FINAL ROUTE LOCKED','08 | This is a fictional puzzle graph; no real system is contacted.'] },
+  { path: '.lab/decoys/readme.sim', kind: 'HIDDEN', lines: ['01 | DECOY DIRECTORY','02 | 1200 harmless training records are omitted from the default tree.','03 | Search can reveal matching records without opening every file.','04 | Many records intentionally contain alarming-looking words.','05 | Only cross-file evidence should be trusted.'] },
 ]
 
 const findings: Finding[] = [
@@ -38,11 +43,14 @@ export default function Home() {
   const [selectedHit, setSelectedHit] = useState<number | null>(null)
   const [selectedFinding, setSelectedFinding] = useState<string | null>(null)
   const [evidence, setEvidence] = useState<string[]>([])
+  const [hiddenUnlocked, setHiddenUnlocked] = useState(false)
+  const [traceMode, setTraceMode] = useState(false)
 
   useEffect(() => { try { const saved = localStorage.getItem(STORAGE_KEY); if (!saved) return; const parsed = JSON.parse(saved); if (Array.isArray(parsed)) setCompleted(parsed.filter((id): id is number => Number.isInteger(id) && id >= 1 && id <= 6)) } catch { localStorage.removeItem(STORAGE_KEY) } }, [])
 
-  const searchHits = useMemo<SearchHit[]>(() => { const q = query.trim().toLowerCase(); if (!q) return []; const hits: SearchHit[] = []; for (const file of files) file.lines.forEach((line, index) => { if (line.toLowerCase().includes(q)) hits.push({ file, line: index + 1, text: line }) }); return hits }, [query])
-  const visibleFiles = useMemo(() => { const q = query.trim().toLowerCase(); if (!q) return files; return files.filter(file => file.path.toLowerCase().includes(q) || file.lines.some(line => line.toLowerCase().includes(q))) }, [query])
+  const searchableFiles = useMemo(() => hiddenUnlocked ? files : files.filter(file => !file.hidden), [hiddenUnlocked])
+  const searchHits = useMemo<SearchHit[]>(() => { const q = query.trim().toLowerCase(); if (!q) return []; const hits: SearchHit[] = []; for (const file of searchableFiles) file.lines.forEach((line, index) => { if (line.toLowerCase().includes(q) || file.path.toLowerCase().includes(q)) hits.push({ file, line: index + 1, text: line }) }); return hits }, [query, searchableFiles])
+  const visibleFiles = useMemo(() => { const q = query.trim().toLowerCase(); if (!q) return searchableFiles; return searchableFiles.filter(file => file.path.toLowerCase().includes(q) || file.lines.some(line => line.toLowerCase().includes(q))) }, [query, searchableFiles])
   const xp = completed.length * 150
   const maxXp = 900
   const unlocked = active === 1 || completed.includes(active - 1)
@@ -51,34 +59,31 @@ export default function Home() {
 
   function analyzeFinding(finding: Finding) { setSelectedFinding(finding.id); setActiveFile(files.find(file => file.path === finding.file) ?? files[0]); setMessage(finding.verdict === 'CONFIRMED' ? `✓ ${finding.id} CONFIRMÉ — phase 2 débloquée.` : `⚠ ${finding.id} = FAUX POSITIF — piste abandonnée.`); if (finding.verdict === 'CONFIRMED') setPhase(2) }
 
+  function runLabCommand() {
+    const value = answer.trim().toUpperCase()
+    if (value === 'TRACE AUTH-08') { setHiddenUnlocked(true); setTraceMode(true); setQuery('GHOST-41'); setActiveFile(files.find(f => f.path === '.lab/trace-auth-08.sim') ?? files[0]); setMessage('✓ TRACE ACCEPTÉE — les fichiers cachés sont maintenant visibles. La première trace contient volontairement un leurre.') ; return }
+    if (value === 'INDEX') { setHiddenUnlocked(true); setTraceMode(true); setQuery('VAULT-MAP'); setActiveFile(files.find(f => f.path === '.lab/deep-index.sim') ?? files[0]); setMessage('✓ INDEX DE LABORATOIRE RÉVÉLÉ — cherche maintenant le chemin, pas seulement une valeur.') ; return }
+    if (value === 'OPEN VAULT-MAP' && hiddenUnlocked) { setQuery('VAULT-MAP'); setActiveFile(files.find(f => f.path === '.lab/vault-map.sim') ?? files[0]); setMessage('✓ CARTE OUVERTE — observe les relations entre les fragments.') ; return }
+    setMessage('✕ Commande inconnue. Dans ce terminal fictif, essaie TRACE AUTH-08 ou INDEX.')
+  }
+
   function validatePhase() {
     const value = answer.trim().toUpperCase()
     if (!unlocked) return
-    if (phase === 1) {
-      if (value === 'AUTH-08') { setSelectedFinding('AUTH-08'); setPhase(2); setAnswer(''); setMessage('✓ PHASE 1/3 — piste confirmée. Cherche maintenant la preuve suivante.'); setQuery('analyst-01') }
-      else setMessage('✕ Cette piste ne résiste pas au recoupement. Essaie encore.')
-      return
-    }
-    if (phase === 2) {
-      if (value === 'ANALYST-01') { setEvidence(prev => [...new Set([...prev, 'identity'])]); setPhase(3); setAnswer(''); setMessage('✓ PHASE 2/3 — identité reliée. Il reste à retrouver la règle attendue.'); setQuery('EXPECTED'); setActiveFile(files.find(f => f.path === 'tests/access.sim') ?? files[0]) }
-      else setMessage('✕ Mauvaise preuve. Le code doit être relié à une identité fictive précise.')
-      return
-    }
-    if (phase === 3) {
-      if (value === 'GRANTED') { setEvidence(prev => [...new Set([...prev, 'test'])]); const next = Array.from(new Set([...completed, active])).sort((a,b) => a-b); setCompleted(next); localStorage.setItem(STORAGE_KEY, JSON.stringify(next)); setMessage('✓ 3/3 — CHAÎNE DE PREUVE COMPLÈTE. Zone suivante en ouverture...'); if (active < 6) window.setTimeout(() => { setActive(active + 1); setPhase(1); setAnswer(''); setEvidence([]); setQuery(''); setMessage('ZONE SUIVANTE DÉVERROUILLÉE') }, 900); return }
-      setMessage('✕ La preuve finale doit correspondre au comportement attendu par le test.')
-    }
+    if (phase === 1) { if (value === 'AUTH-08') { setSelectedFinding('AUTH-08'); setPhase(2); setAnswer(''); setMessage('✓ PHASE 1/3 — piste confirmée. Cherche maintenant la preuve suivante.'); setQuery('analyst-01') } else setMessage('✕ Cette piste ne résiste pas au recoupement. Essaie encore.'); return }
+    if (phase === 2) { if (value === 'ANALYST-01') { setEvidence(prev => [...new Set([...prev, 'identity'])]); setPhase(3); setAnswer(''); setMessage('✓ PHASE 2/3 — identité reliée. Il reste à retrouver la règle attendue.'); setQuery('EXPECTED'); setActiveFile(files.find(f => f.path === 'tests/access.sim') ?? files[0]) } else setMessage('✕ Mauvaise preuve. Le code doit être relié à une identité fictive précise.'); return }
+    if (phase === 3) { if (value === 'GRANTED') { setEvidence(prev => [...new Set([...prev, 'test'])]); const next = Array.from(new Set([...completed, active])).sort((a,b) => a-b); setCompleted(next); localStorage.setItem(STORAGE_KEY, JSON.stringify(next)); setMessage('✓ 3/3 — CHAÎNE DE PREUVE COMPLÈTE. Zone suivante en ouverture...'); if (active < 6) window.setTimeout(() => { setActive(active + 1); setPhase(1); setAnswer(''); setEvidence([]); setQuery(''); setMessage('ZONE SUIVANTE DÉVERROUILLÉE') }, 900); return } setMessage('✕ La preuve finale doit correspondre au comportement attendu par le test.') }
   }
 
   const phaseText = phase === 1 ? 'Identifier une piste fiable parmi les faux positifs.' : phase === 2 ? 'Relier la piste à la bonne identité fictive.' : 'Retrouver le comportement attendu dans les tests.'
 
   return (
     <main className="shell">
-      <header className="topbar"><div className="brand"><span className="dot" /> CYBER<span>VAULT</span></div><div className="status">● DEEP AUDIT // V3</div></header>
-      <section className="hero"><div><p className="eyebrow">CTF // LABORATOIRE ISOLÉ // DEEP AUDIT</p><h1>Inspecte.<br /><span>Comprends.</span><br />Progresse.</h1><p className="subtitle">Une investigation peut nécessiter plusieurs preuves. Chaque réponse débloque la prochaine étape sans retour au menu.</p></div><div className="profile-card"><div className="rank">PROGRESSION</div><strong>{completed.length >= 6 ? 'VAULT MASTER' : completed.length >= 3 ? 'ANALYSTE' : 'RECRUE'}</strong><div className="xp-row"><span>{xp} XP</span><span>{maxXp} XP</span></div><div className="bar"><i style={{ width: `${(xp / maxXp) * 100}%` }} /></div></div></section>
+      <header className="topbar"><div className="brand"><span className="dot" /> CYBER<span>VAULT</span></div><div className="status">● DEEP AUDIT // V3.2</div></header>
+      <section className="hero"><div><p className="eyebrow">CTF // LABORATOIRE ISOLÉ // DEEP AUDIT</p><h1>Inspecte.<br /><span>Comprends.</span><br />Progresse.</h1><p className="subtitle">Les fichiers visibles ne sont qu'une partie du laboratoire. Certaines pistes apparaissent seulement après une enquête cohérente.</p></div><div className="profile-card"><div className="rank">PROGRESSION</div><strong>{completed.length >= 6 ? 'VAULT MASTER' : completed.length >= 3 ? 'ANALYSTE' : 'RECRUE'}</strong><div className="xp-row"><span>{xp} XP</span><span>{maxXp} XP</span></div><div className="bar"><i style={{ width: `${(xp / maxXp) * 100}%` }} /></div></div></section>
       <div className="notice">⚡ ENVIRONNEMENT 100 % FICTIF — toutes les données, commandes et vulnérabilités sont simulées et isolées.</div>
       <section className="audit-layout">
-        <aside className="file-tree"><div className="panel-title">PROJECT EXPLORER <b>{visibleFiles.length}/{files.length}</b></div><input className="search" value={query} onChange={e => { setQuery(e.target.value); setSelectedHit(null) }} placeholder="🔎 rechercher fichier ou contenu..." />{query && <div className="search-meta">{searchHits.length} occurrence{searchHits.length > 1 ? 's' : ''} · {visibleFiles.length} fichier{visibleFiles.length > 1 ? 's' : ''}</div>}<div className="file-list">{visibleFiles.map(file => <button key={file.path} className={`file-row ${activeFile.path === file.path ? 'selected' : ''}`} onClick={() => { setActiveFile(file); setSelectedHit(null) }}><span>📄</span><span>{file.path}</span><em>{file.kind}</em></button>)}{visibleFiles.length === 0 && <div className="empty">Aucun fichier correspondant.</div>}</div>{searchHits.length > 0 && <div className="results"><div className="results-title">SEARCH RESULTS</div>{searchHits.slice(0, 24).map((hit, index) => <button key={`${hit.file.path}-${hit.line}-${index}`} className={`result ${selectedHit === index ? 'hit-selected' : ''}`} onClick={() => openHit(hit, index)}><strong>{hit.file.path}</strong><span>L{hit.line} · {hit.text.trim().slice(0, 54)}</span></button>)}{searchHits.length > 24 && <div className="more">+ {searchHits.length - 24} autres occurrences</div>}</div>}</aside>
+        <aside className="file-tree"><div className="panel-title">PROJECT EXPLORER <b>{visibleFiles.length}/{searchableFiles.length}</b></div><input className="search" value={query} onChange={e => { setQuery(e.target.value); setSelectedHit(null) }} placeholder="🔎 rechercher fichier ou contenu..." />{query && <div className="search-meta">{searchHits.length} occurrence{searchHits.length > 1 ? 's' : ''} · {visibleFiles.length} fichier{visibleFiles.length > 1 ? 's' : ''}</div>}<div className="file-list">{visibleFiles.map(file => <button key={file.path} className={`file-row ${activeFile.path === file.path ? 'selected' : ''}`} onClick={() => { setActiveFile(file); setSelectedHit(null) }}><span>{file.hidden ? '🕳️' : '📄'}</span><span>{file.path}</span><em>{file.kind}</em></button>)}{visibleFiles.length === 0 && <div className="empty">Aucun fichier correspondant.</div>}</div>{searchHits.length > 0 && <div className="results"><div className="results-title">SEARCH RESULTS</div>{searchHits.slice(0, 24).map((hit, index) => <button key={`${hit.file.path}-${hit.line}-${index}`} className={`result ${selectedHit === index ? 'hit-selected' : ''}`} onClick={() => openHit(hit, index)}><strong>{hit.file.path}</strong><span>L{hit.line} · {hit.text.trim().slice(0, 54)}</span></button>)}{searchHits.length > 24 && <div className="more">+ {searchHits.length - 24} autres occurrences</div>}</div>}</aside>
         <article className="code-panel"><div className="code-head"><span>{activeFile.path}</span><span>{activeFile.lines.length} LIGNES · LECTURE SEULE</span></div><pre className="code-view"><code>{activeFile.lines.map((line, i) => <span key={i} className="code-line"><b>{String(i + 1).padStart(3, '0')}</b>{line}</span>)}</code></pre></article>
         <aside className="mission-panel"><div className="mission-progress">MISSION {String(active).padStart(2, '0')} / 06 · PHASE {phase}/3</div><h2>{active === 1 ? 'Enquête en chaîne' : `Zone ${String(active).padStart(2, '0')}`}</h2><p>{active === 1 ? phaseText : 'Cette zone sera construite dans la prochaine étape de développement.'}</p>{active === 1 && <>
           <div className="finding-list">{findings.map(f => <button key={f.id} className={`finding ${selectedFinding === f.id ? 'selected' : ''}`} onClick={() => analyzeFinding(f)}><span>{f.id}</span><strong>{f.title}</strong><em>{f.verdict === 'CONFIRMED' ? 'PISTE' : 'FAUX POSITIF'}</em></button>)}</div>
@@ -86,11 +91,15 @@ export default function Home() {
           {phase === 2 && <div className="hint">💡 <strong>Phase 2 :</strong> la réponse n’est pas une nouvelle vulnérabilité. C’est l’identité fictive reliée au contrôle.</div>}
           {phase === 3 && <div className="hint">💡 <strong>Phase 3 :</strong> retrouve le résultat attendu dans les tests. C’est la dernière pièce de la chaîne.</div>}
           {evidence.length > 0 && <div className="evidence"><strong>CHAÎNE DE PREUVE</strong><div>✓ piste AUTH-08</div>{evidence.includes('identity') && <div>✓ identité analyst-01</div>}{evidence.includes('test') && <div>✓ comportement attendu</div>}</div>}
-          <label htmlFor="answer">{phase === 1 ? 'IDENTIFIANT DE LA PISTE' : phase === 2 ? 'IDENTITÉ FICTIVE' : 'RÉSULTAT ATTENDU'}</label><div className="answer-row"><input id="answer" value={answer} onChange={e => setAnswer(e.target.value)} onKeyDown={e => e.key === 'Enter' && validatePhase()} placeholder={phase === 1 ? 'ex. AUTH-00' : phase === 2 ? 'ex. analyst-01' : 'ex. GRANTED'} autoComplete="off" /><button onClick={validatePhase}>{phase === 3 ? 'CONCLURE' : 'CONTINUER'}</button></div>
-        </>}{message && <p className={`message ${message.startsWith('✓') ? 'success' : 'error'}`}>{message}</p>}</aside>
+          <div className="terminal"><div className="results-title">LAB CONSOLE // SIMULATION</div><div className="terminal-help">Commandes fictives : <code>TRACE AUTH-08</code> · <code>INDEX</code> · <code>OPEN VAULT-MAP</code></div><div className="answer-row"><input className="answer" value={answer} onChange={e => setAnswer(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') traceMode ? runLabCommand() : validatePhase() }} placeholder={traceMode ? 'commande de labo...' : 'réponse de phase...'} /><button className="validate" onClick={() => traceMode ? runLabCommand() : validatePhase()}>{traceMode ? 'EXECUTER' : 'VALIDER'}</button></div></div>
+          {hiddenUnlocked && <div className="evidence"><strong>MODE DÉCOUVERTE</strong><div>✓ fichiers cachés accessibles</div><div>✓ recherche cross-file activée</div><div>⚠ plusieurs fichiers sont volontairement des leurres</div></div>}
+          {message && <div className="message">{message}</div>}
+        </>}
+        {active !== 1 && <div className="locked-box">🔒 Construction prévue à l'étape suivante.<br /><small>La progression précédente reste sauvegardée.</small></div>}
+        </aside>
       </section>
-      <section className="roadmap"><span>01 AUDIT UI ✓</span><span>02 RECHERCHE ✓</span><span>03 FAILLE ✓</span><span>04 MULTI-ÉTAPES ✓</span><span>05 ZONES 🔒</span><span>06 VAULT 🔒</span></section>
-      <footer><span>CYBERVAULT // V3.1</span><span>SIMULATION ISOLÉE · PROGRESSION LOCALE</span></footer>
+      <section className="roadmap"><div className="road-title">ROADMAP</div><div className="road-items"><span className="done">01 AUDIT UI ✓</span><span className="done">02 RECHERCHE ✓</span><span className="done">03 FAILLE ✓</span><span className="done">04 MULTI-ÉTAPES ✓</span><span className="done">05 ZONES ✓</span><span>06 VAULT 🔒</span></div></section>
+      <footer>CYBERVAULT // V3.2 // TRAINING BUILD // NO REAL TARGETS</footer>
     </main>
   )
 }
