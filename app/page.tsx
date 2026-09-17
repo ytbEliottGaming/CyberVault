@@ -209,6 +209,8 @@ export default function Home() {
   const [terminalInput, setTerminalInput] = useState('')
   const [terminalOutput, setTerminalOutput] = useState<string[]>(['CYBERVAULT SIMULATOR // terminal idle'])
   const [vaultOpen, setVaultOpen] = useState(false)
+  const [recentErrors, setRecentErrors] = useState<number[]>([])
+  const [penaltyErrors, setPenaltyErrors] = useState(0)
 
   useEffect(() => {
     try {
@@ -244,16 +246,37 @@ export default function Home() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
   }
 
-  function toggleFolder(folder: string) {
-    setExpanded(prev => prev.includes(folder) ? prev.filter(x => x !== folder) : [...prev, folder])
+  function resetErrorTracking() {
+    setRecentErrors([])
+    setPenaltyErrors(0)
+  }
+
+  function registerFailedAttempt() {
+    const now = Date.now()
+    const recent = [...recentErrors.filter(time => now - time <= 10000), now]
+    setRecentErrors(recent)
+
+    if (recent.length > 5) {
+      const nextPenalty = penaltyErrors + 1
+      setPenaltyErrors(nextPenalty)
+      if (nextPenalty >= 5) {
+        reset()
+        setMessage('ATTENTION — 5 ERREURS SUPPLÉMENTAIRES : RETOUR AU DÉBUT')
+        return true
+      }
+      setMessage(`⚠ ATTENTION — ENCORE ${5 - nextPenalty} ERREUR${5 - nextPenalty > 1 ? 'S' : ''} ET VOUS RETOURNEREZ AU DÉBUT ⚠`)
+    }
+    return false
   }
 
   function validateAnswer() {
     const value = answer.trim().toUpperCase()
     if (value !== currentPhase.answer) {
-      setMessage('✕ Preuve refusée. Aucun indice automatique ne sera fourni.')
+      registerFailedAttempt()
+      if (penaltyErrors < 5) setMessage(prev => prev || '✕ Preuve refusée. Aucun indice automatique ne sera fourni.')
       return
     }
+    resetErrorTracking()
     const nextPhase = phase + 1
     setAnswer('')
     setPhase(nextPhase)
@@ -275,27 +298,32 @@ export default function Home() {
     const normalized = value.toUpperCase()
     setTerminalInput('')
     if (normalized === 'CYBERVAULT::INDEX::TRACE ORBIT-17 --sealed-map --sim-only') {
+      resetErrorTracking()
       setTerminalOutput(['> command accepted', '[SIM] index trace: ORBIT-17', '[SIM] vault/sealed-map.sim unlocked'])
       setPhase(p => Math.max(p, 1))
       return
     }
     if (normalized === 'CYBERVAULT::LEDGER::FOLLOW LATTICE-09 --cross-file --readonly') {
+      resetErrorTracking()
       setTerminalOutput(['> command accepted', '[SIM] ledger trace: LATTICE-09', '[SIM] vault/ledger-3.sim unlocked'])
       setPhase(p => Math.max(p, 2))
       return
     }
     if (normalized === 'CYBERVAULT::VAULT::VERIFY NIGHT-ORBIT --chain 3 --fictional') {
+      resetErrorTracking()
       setTerminalOutput(['> command accepted', '[SIM] final fragment verified', '[SIM] final-key.sim indexed'])
       setPhase(p => Math.max(p, 3))
       return
     }
     if (normalized === 'CYBERVAULT::VAULT::OPEN NIGHT-ORBIT --chain 3 --sim-only') {
+      resetErrorTracking()
       setTerminalOutput(['> command accepted', '[SIM] VAULT ACCESS GRANTED', '[SIM] no external action performed'])
       setVaultOpen(true)
       setPhase(4)
       persist(Array.from(new Set([...completed, 6])).sort((a, b) => a - b))
       return
     }
+    registerFailedAttempt()
     setTerminalOutput(['> command rejected', '[SIM] unknown command or invalid argument sequence'])
   }
 
@@ -313,6 +341,8 @@ export default function Home() {
     setTerminalOutput(['CYBERVAULT SIMULATOR // terminal idle'])
     setTerminalInput('')
     setVaultOpen(false)
+    setRecentErrors([])
+    setPenaltyErrors(0)
   }
 
   return (
@@ -367,7 +397,7 @@ export default function Home() {
           <div className="mission-progress">MISSION 06 / 06 · FINAL VAULT · {Math.min(phase + 1, phases.length)}/{phases.length}</div>
           <h2>{vaultOpen ? 'VAULT OUVERT' : currentPhase.title}</h2>
           <p>{vaultOpen ? 'Chaîne validée. Le laboratoire confirme uniquement une réussite interne au jeu.' : currentPhase.prompt}</p>
-          {message && <div className="feedback">{message}</div>}
+          {message && <div className={`feedback ${message.includes('ATTENTION') ? 'warning' : ''}`}>{message}</div>}
 
           {!vaultOpen && <div className="terminal mission-terminal">
             <div className="terminal-head">SIMULATOR // PROOF INPUT</div>
