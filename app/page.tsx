@@ -2,91 +2,43 @@
 
 import { useEffect, useMemo, useState } from 'react'
 
-type Mission = {
-  id: number
-  title: string
-  difficulty: string
-  xp: number
-  category: string
-  text: string
-  hint: string
-  answer: string
-  code?: string
-}
+type FileItem = { path: string; kind: string; lines: string[] }
 
-const missions: Mission[] = [
-  {
-    id: 1,
-    title: 'Signal fantôme',
-    difficulty: 'INITIATION',
-    xp: 100,
-    category: 'LOG ANALYSIS',
-    text: 'Analyse les journaux du terminal SIM-07 et retrouve le fragment délivré par le système.',
-    hint: 'Le fragment est sur la ligne contenant ACCESS.',
-    answer: 'VX-204',
-    code: '[09:41:02] handshake: OK\n[09:41:04] node: SIM-07\n[09:41:08] ACCESS: VX-204\n[09:41:10] firewall: nominal\n[09:41:12] session: ready',
-  },
-  {
-    id: 2,
-    title: 'Le miroir',
-    difficulty: 'FACILE',
-    xp: 150,
-    category: 'CRYPTO',
-    text: 'Un message fictif a été décalé de 3 lettres vers l’avant. Retrouve le mot original.',
-    hint: 'Recule chaque lettre de 3 positions dans l’alphabet.',
-    answer: 'CAT',
-    code: 'MESSAGE\n  FDW\n\nALGORITHME SIMULÉ\n  SHIFT = +3',
-  },
-  {
-    id: 3,
-    title: 'Portail fantôme',
-    difficulty: 'MOYEN',
-    xp: 200,
-    category: 'ACCESS CONTROL',
-    text: 'Le portail fictif affiche une règle d’autorisation. Identifie la valeur de test qui révèle la faille logique simulée.',
-    hint: 'Observe ce qui arrive quand le rôle demandé n’est pas reconnu.',
-    answer: 'OVERRIDE-17',
-    code: 'SIMULATED AUTH CHECK\n\nrole = request.role\nif role === "ADMIN":\n    access = "GRANTED"\nelse if role === "UNKNOWN":\n    access = "OVERRIDE-17"\nelse:\n    access = "DENIED"',
-  },
-  {
-    id: 4,
-    title: 'ID miroir',
-    difficulty: 'MOYEN+',
-    xp: 200,
-    category: 'LOGIC REVIEW',
-    text: 'Un système fictif affiche un profil public à partir d’un identifiant. Repère l’identifiant de test exposé par erreur dans la réponse.',
-    hint: 'Cherche la valeur qui ne correspond pas au profil demandé.',
-    answer: 'PROFILE-9001',
-    code: 'SIMULATED PROFILE RESPONSE\n\nrequestedProfile = "PLAYER-042"\nreturnedProfile = "PROFILE-9001"\nstatus = "PUBLIC"\nsource = "DEMO-DATA"',
-  },
-  {
-    id: 5,
-    title: 'Entrée fantôme',
-    difficulty: 'DIFFICILE',
-    xp: 250,
-    category: 'INPUT REVIEW',
-    text: 'Inspecte ce pseudo-code de validation. Dans CyberVault, quelle valeur spéciale le développeur de la simulation a-t-il prévue pour déclencher le mode diagnostic ?',
-    hint: 'La valeur de diagnostic commence par DEBUG et se termine par un nombre.',
-    answer: 'DEBUG-404',
-    code: 'SIMULATED INPUT HANDLER\n\nvalue = input.value\nif value === "DEBUG-404":\n    mode = "DIAGNOSTIC"\nelse:\n    mode = "NORMAL"\n\n// aucune donnée réelle n’est traitée',
-  },
-  {
-    id: 6,
-    title: 'Le coffre final',
-    difficulty: 'EXPERT',
-    xp: 300,
-    category: 'CHAIN OF CLUES',
-    text: 'Assemble les fragments gagnés dans les cinq premières missions, dans l’ordre.',
-    hint: 'VX-204 + CAT + OVERRIDE-17 + PROFILE-9001 + DEBUG-404.',
-    answer: 'VX-204CATOVERRIDE-17PROFILE-9001DEBUG-404',
-  },
+const files: FileItem[] = [
+  { path: 'app/main.sim', kind: 'SIM', lines: Array.from({ length: 42 }, (_, i) => `// ${String(i + 1).padStart(2, '0')} | simulation module ${i + 1}`) },
+  { path: 'app/auth/check.sim', kind: 'AUTH', lines: [
+    '01 | function checkAccess(user, area) {',
+    '02 |   const role = user.role',
+    '03 |   const requested = area.name',
+    '04 |',
+    '05 |   if (requested === "PUBLIC") return "GRANTED"',
+    '06 |   if (role === "ADMIN") return "GRANTED"',
+    '07 |   if (role === "ANALYST" && requested === "LAB") return "GRANTED"',
+    '08 |   return "DENIED"',
+    '09 | }',
+    '10 |',
+    '11 | // NOTE: all values above are simulation-only.',
+    '12 | // NOTE: the exercise never contacts a real service.',
+  ] },
+  { path: 'app/auth/session.sim', kind: 'AUTH', lines: Array.from({ length: 58 }, (_, i) => `// ${String(i + 1).padStart(2, '0')} | session simulation ${i + 1}`) },
+  { path: 'app/users/demo-data.sim', kind: 'DATA', lines: Array.from({ length: 76 }, (_, i) => `// ${String(i + 1).padStart(2, '0')} | demo record ${String(i + 1).padStart(3, '0')}`) },
+  { path: 'config/lab.sim', kind: 'CFG', lines: Array.from({ length: 35 }, (_, i) => `// ${String(i + 1).padStart(2, '0')} | lab configuration ${i + 1}`) },
+  { path: 'tests/access.sim', kind: 'TEST', lines: [
+    '01 | TEST: public area accepts every demo user',
+    '02 | TEST: admin role accepts LAB area',
+    '03 | TEST: analyst role accepts LAB area',
+    '04 | TEST: guest role is denied from LAB area',
+    '05 | TEST: all checks remain inside the isolated simulator',
+  ] },
 ]
 
-const STORAGE_KEY = 'cybervault-progress-v2'
+const STORAGE_KEY = 'cybervault-progress-v3'
 
 export default function Home() {
   const [completed, setCompleted] = useState<number[]>([])
   const [active, setActive] = useState(1)
+  const [activeFile, setActiveFile] = useState(files[0])
+  const [query, setQuery] = useState('')
   const [answer, setAnswer] = useState('')
   const [message, setMessage] = useState('')
 
@@ -95,103 +47,94 @@ export default function Home() {
       const saved = localStorage.getItem(STORAGE_KEY)
       if (!saved) return
       const parsed = JSON.parse(saved)
-      if (Array.isArray(parsed)) setCompleted(parsed.filter((id): id is number => Number.isInteger(id) && id >= 1 && id <= missions.length))
+      if (Array.isArray(parsed)) setCompleted(parsed.filter((id): id is number => Number.isInteger(id) && id >= 1 && id <= 6))
     } catch {
       localStorage.removeItem(STORAGE_KEY)
     }
   }, [])
 
-  const xp = useMemo(() => missions.filter(m => completed.includes(m.id)).reduce((sum, m) => sum + m.xp, 0), [completed])
-  const maxXp = missions.reduce((sum, m) => sum + m.xp, 0)
-  const mission = missions.find(m => m.id === active) ?? missions[0]
+  const visibleFiles = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    if (!q) return files
+    return files.filter(file => file.path.toLowerCase().includes(q) || file.lines.some(line => line.toLowerCase().includes(q)))
+  }, [query])
+
+  const xp = completed.length * 150
+  const maxXp = 900
   const unlocked = active === 1 || completed.includes(active - 1)
 
   function validate() {
     if (!unlocked) return
-    if (answer.trim().toUpperCase() === mission.answer) {
+    const expected = active === 1 ? 'AUTH-08' : ''
+    if (answer.trim().toUpperCase() === expected) {
       const next = Array.from(new Set([...completed, active])).sort((a, b) => a - b)
       setCompleted(next)
       localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
-      setMessage(`Mission validée ! +${mission.xp} XP`)
-      setAnswer('')
+      if (active < 6) {
+        setMessage('✓ ÉTAPE VALIDÉE — ouverture automatique de la zone suivante...')
+        window.setTimeout(() => { setActive(active + 1); setMessage('ZONE SUIVANTE DÉVERROUILLÉE'); setAnswer('') }, 700)
+      } else {
+        setMessage('✓ COFFRE FINAL DÉVERROUILLÉ')
+      }
     } else {
-      setMessage('Analyse incomplète. Relis les données de la simulation.')
+      setMessage('✕ Mauvaise analyse. Cherche une anomalie réelle dans la simulation, pas seulement une ligne inhabituelle.')
     }
-  }
-
-  function selectMission(id: number) {
-    const target = missions.find(m => m.id === id)
-    if (!target) return
-    const canOpen = id === 1 || completed.includes(id - 1)
-    if (!canOpen) return
-    setActive(id)
-    setAnswer('')
-    setMessage('')
   }
 
   return (
     <main className="shell">
       <header className="topbar">
         <div className="brand"><span className="dot" /> CYBER<span>VAULT</span></div>
-        <div className="status">● LABORATOIRE EN LIGNE</div>
+        <div className="status">● DEEP AUDIT // V3</div>
       </header>
 
       <section className="hero">
         <div>
-          <p className="eyebrow">CTF // LABORATOIRE ISOLÉ</p>
-          <h1>Bienvenue dans<br /><span>CyberVault.</span></h1>
-          <p className="subtitle">Inspecte des systèmes entièrement simulés, repère leurs failles logiques et reconstruis la chaîne qui ouvre le coffre final.</p>
+          <p className="eyebrow">CTF // LABORATOIRE ISOLÉ // DEEP AUDIT</p>
+          <h1>Inspecte.<br /><span>Comprends.</span><br />Progresse.</h1>
+          <p className="subtitle">Cette fois, la réponse n'est pas affichée dans l'énoncé. Explore les fichiers fictifs, cherche les anomalies et construis ton propre chemin d'analyse.</p>
         </div>
         <div className="profile-card">
-          <div className="rank">RANG</div>
-          <strong>{xp >= 900 ? 'VAULT MASTER' : xp >= 600 ? 'CYBER AGENT' : xp >= 300 ? 'ANALYSTE' : 'RECRUE'}</strong>
+          <div className="rank">PROGRESSION</div>
+          <strong>{completed.length >= 6 ? 'VAULT MASTER' : completed.length >= 3 ? 'ANALYSTE' : 'RECRUE'}</strong>
           <div className="xp-row"><span>{xp} XP</span><span>{maxXp} XP</span></div>
-          <div className="bar"><i style={{ width: `${Math.min(100, (xp / maxXp) * 100)}%` }} /></div>
+          <div className="bar"><i style={{ width: `${(xp / maxXp) * 100}%` }} /></div>
         </div>
       </section>
 
-      <div className="notice">⚡ LABORATOIRE 100 % FICTIF — les « failles » sont des mécaniques de jeu isolées. Aucun système réel n’est ciblé.</div>
+      <div className="notice">⚡ ENVIRONNEMENT 100 % FICTIF — code, fichiers, commandes et « vulnérabilités » sont des mécaniques de jeu isolées.</div>
 
-      <section className="grid">
-        <aside className="missions">
-          <div className="section-title"><span>MISSIONS</span><b>{completed.length}/{missions.length}</b></div>
-          {missions.map(m => {
-            const done = completed.includes(m.id)
-            const locked = m.id > 1 && !completed.includes(m.id - 1)
-            return (
-              <button key={m.id} className={`mission ${active === m.id ? 'active' : ''} ${locked ? 'locked' : ''}`} onClick={() => selectMission(m.id)}>
-                <span className="mission-num">{done ? '✓' : locked ? '×' : String(m.id).padStart(2, '0')}</span>
-                <span><strong>{m.title}</strong><small>{m.difficulty} · {m.category} · {m.xp} XP</small></span>
-                <em>{done ? 'VALIDÉ' : locked ? 'VERROUILLÉ' : '→'}</em>
-              </button>
-            )
-          })}
+      <section className="audit-layout">
+        <aside className="file-tree">
+          <div className="panel-title">PROJECT EXPLORER <b>{visibleFiles.length}/{files.length}</b></div>
+          <input className="search" value={query} onChange={e => setQuery(e.target.value)} placeholder="🔎 rechercher dans le projet..." />
+          {visibleFiles.map(file => (
+            <button key={file.path} className={`file-row ${activeFile.path === file.path ? 'selected' : ''}`} onClick={() => setActiveFile(file)}>
+              <span>📄</span><span>{file.path}</span><em>{file.kind}</em>
+            </button>
+          ))}
         </aside>
 
-        <article className="challenge">
-          <div className="challenge-head"><span>MISSION {String(mission.id).padStart(2, '0')}</span><span className="difficulty">{mission.difficulty}</span></div>
-          <div className="challenge-meta"><span>{mission.category}</span><span>{mission.xp} XP</span></div>
-          <h2>{mission.title}</h2>
-          <p className="challenge-text">{mission.text}</p>
-          {mission.code && <pre className="terminal"><code>{mission.code}</code></pre>}
-          <div className="hint">💡 <strong>Indice :</strong> {mission.hint}</div>
-          <label htmlFor="answer">RÉPONSE DE L’ANALYSE</label>
-          <div className="answer-row">
-            <input id="answer" value={answer} onChange={e => setAnswer(e.target.value)} onKeyDown={e => e.key === 'Enter' && validate()} placeholder="Entre ton fragment..." autoComplete="off" />
-            <button onClick={validate}>VALIDER</button>
-          </div>
-          {message && <p className={`message ${message.startsWith('Mission') ? 'success' : 'error'}`}>{message}</p>}
+        <article className="code-panel">
+          <div className="code-head"><span>{activeFile.path}</span><span>{activeFile.lines.length} LIGNES · LECTURE SEULE</span></div>
+          <pre className="code-view"><code>{activeFile.lines.map((line, i) => <span key={i} className="code-line"><b>{String(i + 1).padStart(3, '0')}</b>{line}</span>)}</code></pre>
         </article>
+
+        <aside className="mission-panel">
+          <div className="mission-progress">MISSION {String(active).padStart(2, '0')} / 06</div>
+          <h2>{active === 1 ? 'Premier audit' : `Zone ${String(active).padStart(2, '0')}`}</h2>
+          <p>{active === 1 ? 'Un contrôle d’accès fictif est caché quelque part dans le projet. Certaines lignes sont volontairement étranges, mais une seule anomalie est liée au comportement attendu.' : 'Cette zone sera construite dans la prochaine étape de développement.'}</p>
+          {active === 1 && <>
+            <div className="hint">💡 <strong>Indice :</strong> ne te contente pas de chercher un mot suspect. Compare le code avec les tests attendus.</div>
+            <label htmlFor="answer">IDENTIFIANT DE L’ANOMALIE</label>
+            <div className="answer-row"><input id="answer" value={answer} onChange={e => setAnswer(e.target.value)} onKeyDown={e => e.key === 'Enter' && validate()} placeholder="ex. AUTH-00" autoComplete="off" /><button onClick={validate}>ANALYSER</button></div>
+          </>}
+          {message && <p className={`message ${message.startsWith('✓') ? 'success' : 'error'}`}>{message}</p>}
+        </aside>
       </section>
 
-      {completed.length === missions.length && (
-        <section className="vault-unlocked">
-          <span>◆</span>
-          <div><strong>COFFRE FINAL DÉVERROUILLÉ</strong><small>Tu as terminé les 6 étapes de l’audit simulé.</small></div>
-        </section>
-      )}
-
-      <footer><span>CYBERVAULT // V2.0</span><span>PROGRESSION LOCALE · ENVIRONNEMENT DE TEST ISOLÉ</span></footer>
+      <section className="roadmap"><span>01 AUDIT UI ✓</span><span>02 RECHERCHE 🔒</span><span>03 FAILLE 🔒</span><span>04 MULTI-ÉTAPES 🔒</span><span>05 ZONES 🔒</span><span>06 VAULT 🔒</span></section>
+      <footer><span>CYBERVAULT // V3.0</span><span>SIMULATION ISOLÉE · PROGRESSION LOCALE</span></footer>
     </main>
   )
 }
