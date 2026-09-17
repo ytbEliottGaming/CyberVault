@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 
 type FileItem = { path: string; kind: string; lines: string[] }
+type SearchHit = { file: FileItem; line: number; text: string }
 
 const files: FileItem[] = [
   { path: 'app/main.sim', kind: 'SIM', lines: Array.from({ length: 42 }, (_, i) => `// ${String(i + 1).padStart(2, '0')} | simulation module ${i + 1}`) },
@@ -30,6 +31,20 @@ const files: FileItem[] = [
     '04 | TEST: guest role is denied from LAB area',
     '05 | TEST: all checks remain inside the isolated simulator',
   ] },
+  { path: 'docs/architecture.sim', kind: 'DOC', lines: [
+    '01 | CYBERVAULT LAB ARCHITECTURE',
+    '02 | ----------------------------',
+    '03 | auth/check.sim -> authorization rules',
+    '04 | auth/session.sim -> session state simulator',
+    '05 | users/demo-data.sim -> fictional identities',
+    '06 | config/lab.sim -> isolated lab settings',
+    '07 | tests/access.sim -> expected authorization behaviour',
+    '08 | docs/architecture.sim -> project map',
+    '09 |',
+    '10 | Search terms such as AUTH, TEST, LAB and ROLE may reveal related files.',
+  ] },
+  { path: 'logs/audit-001.sim', kind: 'LOG', lines: Array.from({ length: 64 }, (_, i) => `// ${String(i + 1).padStart(2, '0')} | audit event ${String(i + 1).padStart(3, '0')} | status=SIMULATED`) },
+  { path: 'logs/audit-002.sim', kind: 'LOG', lines: Array.from({ length: 51 }, (_, i) => `// ${String(i + 1).padStart(2, '0')} | trace ${String(i + 1).padStart(3, '0')} | source=LAB`) },
 ]
 
 const STORAGE_KEY = 'cybervault-progress-v3'
@@ -41,6 +56,7 @@ export default function Home() {
   const [query, setQuery] = useState('')
   const [answer, setAnswer] = useState('')
   const [message, setMessage] = useState('')
+  const [selectedHit, setSelectedHit] = useState<number | null>(null)
 
   useEffect(() => {
     try {
@@ -53,6 +69,18 @@ export default function Home() {
     }
   }, [])
 
+  const searchHits = useMemo<SearchHit[]>(() => {
+    const q = query.trim().toLowerCase()
+    if (!q) return []
+    const hits: SearchHit[] = []
+    for (const file of files) {
+      file.lines.forEach((line, index) => {
+        if (line.toLowerCase().includes(q)) hits.push({ file, line: index + 1, text: line })
+      })
+    }
+    return hits
+  }, [query])
+
   const visibleFiles = useMemo(() => {
     const q = query.trim().toLowerCase()
     if (!q) return files
@@ -62,6 +90,11 @@ export default function Home() {
   const xp = completed.length * 150
   const maxXp = 900
   const unlocked = active === 1 || completed.includes(active - 1)
+
+  function openHit(hit: SearchHit, index: number) {
+    setActiveFile(hit.file)
+    setSelectedHit(index)
+  }
 
   function validate() {
     if (!unlocked) return
@@ -73,12 +106,8 @@ export default function Home() {
       if (active < 6) {
         setMessage('✓ ÉTAPE VALIDÉE — ouverture automatique de la zone suivante...')
         window.setTimeout(() => { setActive(active + 1); setMessage('ZONE SUIVANTE DÉVERROUILLÉE'); setAnswer('') }, 700)
-      } else {
-        setMessage('✓ COFFRE FINAL DÉVERROUILLÉ')
-      }
-    } else {
-      setMessage('✕ Mauvaise analyse. Cherche une anomalie réelle dans la simulation, pas seulement une ligne inhabituelle.')
-    }
+      } else setMessage('✓ COFFRE FINAL DÉVERROUILLÉ')
+    } else setMessage('✕ Mauvaise analyse. Cherche une anomalie réelle dans la simulation, pas seulement une ligne inhabituelle.')
   }
 
   return (
@@ -107,12 +136,25 @@ export default function Home() {
       <section className="audit-layout">
         <aside className="file-tree">
           <div className="panel-title">PROJECT EXPLORER <b>{visibleFiles.length}/{files.length}</b></div>
-          <input className="search" value={query} onChange={e => setQuery(e.target.value)} placeholder="🔎 rechercher dans le projet..." />
-          {visibleFiles.map(file => (
-            <button key={file.path} className={`file-row ${activeFile.path === file.path ? 'selected' : ''}`} onClick={() => setActiveFile(file)}>
-              <span>📄</span><span>{file.path}</span><em>{file.kind}</em>
-            </button>
-          ))}
+          <input className="search" value={query} onChange={e => { setQuery(e.target.value); setSelectedHit(null) }} placeholder="🔎 rechercher fichier ou contenu..." />
+          {query && <div className="search-meta">{searchHits.length} occurrence{searchHits.length > 1 ? 's' : ''} · {visibleFiles.length} fichier{visibleFiles.length > 1 ? 's' : ''}</div>}
+          <div className="file-list">
+            {visibleFiles.map(file => (
+              <button key={file.path} className={`file-row ${activeFile.path === file.path ? 'selected' : ''}`} onClick={() => { setActiveFile(file); setSelectedHit(null) }}>
+                <span>📄</span><span>{file.path}</span><em>{file.kind}</em>
+              </button>
+            ))}
+            {visibleFiles.length === 0 && <div className="empty">Aucun fichier correspondant.</div>}
+          </div>
+          {searchHits.length > 0 && <div className="results">
+            <div className="results-title">SEARCH RESULTS</div>
+            {searchHits.slice(0, 24).map((hit, index) => (
+              <button key={`${hit.file.path}-${hit.line}-${index}`} className={`result ${selectedHit === index ? 'hit-selected' : ''}`} onClick={() => openHit(hit, index)}>
+                <strong>{hit.file.path}</strong><span>L{hit.line} · {hit.text.trim().slice(0, 54)}</span>
+              </button>
+            ))}
+            {searchHits.length > 24 && <div className="more">+ {searchHits.length - 24} autres occurrences</div>}
+          </div>}
         </aside>
 
         <article className="code-panel">
@@ -125,7 +167,7 @@ export default function Home() {
           <h2>{active === 1 ? 'Premier audit' : `Zone ${String(active).padStart(2, '0')}`}</h2>
           <p>{active === 1 ? 'Un contrôle d’accès fictif est caché quelque part dans le projet. Certaines lignes sont volontairement étranges, mais une seule anomalie est liée au comportement attendu.' : 'Cette zone sera construite dans la prochaine étape de développement.'}</p>
           {active === 1 && <>
-            <div className="hint">💡 <strong>Indice :</strong> ne te contente pas de chercher un mot suspect. Compare le code avec les tests attendus.</div>
+            <div className="hint">💡 <strong>Indice :</strong> utilise maintenant la recherche pour relier les fichiers entre eux. Compare le contrôle avec les tests attendus.</div>
             <label htmlFor="answer">IDENTIFIANT DE L’ANOMALIE</label>
             <div className="answer-row"><input id="answer" value={answer} onChange={e => setAnswer(e.target.value)} onKeyDown={e => e.key === 'Enter' && validate()} placeholder="ex. AUTH-00" autoComplete="off" /><button onClick={validate}>ANALYSER</button></div>
           </>}
