@@ -106,3 +106,57 @@
 @media (max-width: 600px) {
   .mission-rail { grid-template-columns: repeat(2, 1fr); }
 }
+
+
+/* Windows Explorer visual override */
+.file-tree,
+.file-tree * {
+  box-sizing: border-box;
+}
+.file-tree {
+  background: #ffffff !important;
+  color: #1f1f1f !important;
+  border: 1px solid #d0d0d0 !important;
+}
+.file-tree .panel-title {
+  background: #f7f7f7 !important;
+  color: #1f1f1f !important;
+  border-bottom: 1px solid #d0d0d0 !important;
+}
+.file-tree .search {
+  background: #ffffff !important;
+  color: #202020 !important;
+  border: 1px solid #bdbdbd !important;
+}
+.file-tree .windows-tree {
+  background: #ffffff !important;
+}
+.file-tree .folder-row,
+.file-tree .file-row {
+  background: #ffffff !important;
+  color: #202020 !important;
+  border: 0 !important;
+  text-shadow: none !important;
+}
+.file-tree .folder-row:hover,
+.file-tree .file-row:hover {
+  background: #e8f3fc !important;
+  color: #111111 !important;
+}
+.file-tree .file-row.selected {
+  background: #cce8ff !important;
+  color: #111111 !important;
+  outline: 1px solid #8cc4e8 !important;
+}
+.file-tree .folder-row strong,
+.file-tree .file-row span {
+  color: #202020 !important;
+}
+.file-tree .folder-row em,
+.file-tree .file-row em {
+  color: #707070 !important;
+}
+.file-tree .tree-children {
+  border-left: 1px solid #dedede !important;
+  margin-left: 17px !important;
+}
