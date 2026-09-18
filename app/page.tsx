@@ -34,6 +34,32 @@ const fileNames = [
 
 const specialFiles: SimFile[] = [
   {
+    path: 'vault/bruteforce-control.sim', folder: 'vault', name: 'bruteforce-control.sim', kind: 'CONTROL',
+    lines: [
+      '01 | BRUTEFORCE CONTROL // SIMULATOR ONLY',
+      '02 | operator.question = "voulez-vous activer le bruteforce ?" ',
+      '03 | target.format = 12_DIGITS',
+      '04 | candidates.count = 20',
+      '05 | selection = ROTATING-CANDIDATE',
+      '06 | duration.model = CANDIDATE_INDEX',
+      '07 | minimum.simulated = 02:00',
+      '08 | maximum.simulated = 60:00',
+      '09 | success.output = vault/rotation-result.sim',
+      '10 | // no real cryptography or external target is used',
+    ],
+  },
+  {
+    path: 'vault/rotation-result.sim', folder: 'vault', name: 'rotation-result.sim', kind: 'RESULT',
+    lines: [
+      '01 | ROTATION RESULT // generated for this game session',
+      '02 | candidate.pool = 20',
+      '03 | active.candidate = SESSION-ROTATION',
+      '04 | verification = compare candidate -> checksum -> expected behaviour',
+      '05 | result is revealed only after the fictional simulation completes',
+      '06 | // do not treat file names or severity labels as proof',
+    ],
+  },
+  {
     path: 'auth/policy.sim', folder: 'auth', name: 'policy.sim', kind: 'AUTH',
     lines: [
       '01 | policy.mode = "LAB_ONLY"',
@@ -166,32 +192,32 @@ const files: SimFile[] = [...generatedFiles, ...specialFiles]
 
 const phases: Phase[] = [
   {
-    title: 'Cartographier',
-    prompt: 'Retrouve la trace qui permet de demander l’ouverture de la carte scellée.',
-    answer: 'ORBIT-17',
-    unlockTerminal: 'TRACE FOUND: ORBIT-17',
-    terminalOutput: ['[SIM] trace accepted', '[SIM] sealed map is now indexed', '[SIM] inspect vault/sealed-map.sim'],
+    title: 'Cartographie logique',
+    prompt: 'Dans les fichiers d’authentification, recoupe identité, rôle et comportement attendu. Quelle valeur de rôle doit être associée à demo-analyst pour que la politique soit cohérente ?',
+    answer: 'ANALYST',
+    unlockTerminal: 'LOGIC LINK: ANALYST',
+    terminalOutput: ['[SIM] role relation accepted', '[SIM] inspect policy + identity + tests before continuing'],
   },
   {
-    title: 'Recouper',
-    prompt: 'À partir de la carte, retrouve la valeur suivante de la chaîne.',
-    answer: 'LATTICE-09',
-    unlockTerminal: 'LEDGER LINK: LATTICE-09',
-    terminalOutput: ['[SIM] ledger relation confirmed', '[SIM] next record: vault/ledger-3.sim'],
+    title: 'Analyse de contrôle',
+    prompt: 'Le code de contrôle contient trois issues possibles. Sans te fier aux noms de sévérité, quelle décision est attendue pour un analyst qui demande VAULT directement ?',
+    answer: 'DENY',
+    unlockTerminal: 'BEHAVIOUR CHECK: DENY',
+    terminalOutput: ['[SIM] expected behaviour confirmed', '[SIM] a sealed control file mentions an optional brute-force simulator'],
   },
   {
-    title: 'Extraire',
-    prompt: 'Quelle valeur complète la chaîne avant la clé finale ?',
-    answer: 'NIGHT-ORBIT',
-    unlockTerminal: 'KEY FRAGMENT: NIGHT-ORBIT',
-    terminalOutput: ['[SIM] key fragment accepted', '[SIM] final command record located'],
+    title: 'Bruteforce simulé',
+    prompt: 'Tu as trouvé le contrôle qui demande : « voulez-vous activer le bruteforce ? ». Active-le seulement si tu as recoupé le format 12 chiffres et le modèle de rotation. La simulation choisira 1 candidat parmi 20.',
+    answer: 'ACTIVER',
+    unlockTerminal: 'BRUTEFORCE SIMULATION: READY',
+    terminalOutput: ['[SIM] 20 candidates loaded', '[SIM] duration is simulated from 02:00 to 60:00', '[SIM] no real target, password or network is involved'],
   },
   {
-    title: 'Valider',
-    prompt: 'Entre la commande exacte indiquée par le registre final.',
-    answer: 'OPEN-VAULT',
-    unlockTerminal: 'VAULT COMMAND ACCEPTED',
-    terminalOutput: ['[SIM] command accepted', '[SIM] no external action performed', '[SIM] VAULT ACCESS GRANTED'],
+    title: 'Validation finale',
+    prompt: 'Après la simulation, utilise le code de 12 chiffres affiché par le résultat pour valider la dernière étape.',
+    answer: 'VAULT-12',
+    unlockTerminal: 'VAULT VALIDATION: READY',
+    terminalOutput: ['[SIM] final validation accepted', '[SIM] VAULT ACCESS GRANTED'],
   },
 ]
 
@@ -211,6 +237,10 @@ export default function Home() {
   const [vaultOpen, setVaultOpen] = useState(false)
   const [recentErrors, setRecentErrors] = useState<number[]>([])
   const [penaltyErrors, setPenaltyErrors] = useState(0)
+  const [bruteForceActive, setBruteForceActive] = useState(false)
+  const [bruteForceDone, setBruteForceDone] = useState(false)
+  const [bruteForceCode, setBruteForceCode] = useState('')
+  const [bruteForceDuration, setBruteForceDuration] = useState(0)
 
   useEffect(() => {
     try {
@@ -231,7 +261,9 @@ export default function Home() {
     const hits: { file: SimFile; line: number; text: string }[] = []
     for (const file of visibleFiles) {
       file.lines.forEach((line, index) => {
-        if (line.toLowerCase().includes(q)) hits.push({ file, line: index + 1, text: line })
+        if (line.toLowerCase().includes(q) || file.path.toLowerCase().includes(q) || file.name.toLowerCase().includes(q)) {
+          hits.push({ file, line: index + 1, text: line })
+        }
       })
     }
     return hits
@@ -249,6 +281,10 @@ export default function Home() {
   function resetErrorTracking() {
     setRecentErrors([])
     setPenaltyErrors(0)
+    setBruteForceActive(false)
+    setBruteForceDone(false)
+    setBruteForceCode('')
+    setBruteForceDuration(0)
   }
 
   function registerFailedAttempt() {
@@ -269,9 +305,40 @@ export default function Home() {
     return false
   }
 
+  function startBruteforce() {
+    if (phase < 2 || bruteForceActive || bruteForceDone) return
+    const candidates = Array.from({ length: 20 }, (_, i) => {
+      const base = 100000000000 + ((i * 731923 + 48271) % 900000000000)
+      return String(base)
+    })
+    const selected = candidates[Math.floor(Math.random() * candidates.length)]
+    const durationMinutes = 2 + Math.floor(Math.random() * 59)
+    setBruteForceActive(true)
+    setBruteForceDuration(durationMinutes)
+    setBruteForceCode('')
+    setTerminalOutput([
+      '[SIM] bruteforce activé',
+      '[SIM] 20 candidats',
+      '[SIM] durée simulée : ' + String(durationMinutes).padStart(2, '0') + ' min'
+    ])
+
+    window.setTimeout(() => {
+      setBruteForceCode(selected)
+      setBruteForceDone(true)
+      setBruteForceActive(false)
+      setTerminalOutput([
+        '[SIM] simulation terminée',
+        '[SIM] candidat validé : ' + selected,
+        '[SIM] durée simulée : ' + String(durationMinutes).padStart(2, '0') + ' min',
+        '[SIM] utilise ce résultat pour la validation interne',
+      ])
+    }, 2200)
+  }
+
   function validateAnswer() {
     const value = answer.trim().toUpperCase()
-    if (value !== currentPhase.answer) {
+    const expected = phase === 3 ? bruteForceCode : currentPhase.answer
+    if (!expected || value !== expected) {
       registerFailedAttempt()
       if (penaltyErrors < 5) setMessage(prev => prev || '✕ Preuve refusée. Aucun indice automatique ne sera fourni.')
       return
@@ -374,14 +441,24 @@ export default function Home() {
         </div>
       </section>
 
+      <section className="mission-rail" aria-label="Progression des épreuves">
+        {['ÉPREUVE 1','ÉPREUVE 2','ÉPREUVE 3','ÉPREUVE 4','ÉPREUVE 5','ÉPREUVE 6'].map((label, i) => (
+          <div key={label} className={`mission-step ${i === 5 ? 'current' : i < completed.length ? 'done' : 'locked'}`}>
+            <b>{String(i + 1).padStart(2, '0')}</b>
+            <span>{label}</span>
+            <em>{i === 5 ? 'EN COURS' : i < completed.length ? 'TERMINÉE' : 'VERROUILLÉE'}</em>
+          </div>
+        ))}
+      </section>
+
       <div className="notice">⚡ LABORATOIRE 100 % FICTIF — fichiers, identités, commandes et vulnérabilités sont simulés. Aucune cible réelle n’est contactée.</div>
 
       <section className="audit-layout">
         <aside className="file-tree">
-          <div className="panel-title">PROJECT EXPLORER <b>{visibleFolders.length} DOSSIERS · {visibleFiles.length} FICHIERS</b></div>
-          <input className="search" value={query} onChange={e => setQuery(e.target.value)} placeholder="Rechercher dans les fichiers..." />
+          <div className="panel-title">PROJECT EXPLORER <b>{visibleFolders.length} DOSSIERS · {visibleFiles.length} FICHIERS</b></div><div className="explorer-location">Ce PC › CyberVault › Projet simulé</div>
+          <input className="search" value={query} onChange={e => setQuery(e.target.value)} placeholder="Rechercher dossiers, fichiers ou contenu..." />
           {query && <div className="search-meta">{searchHits.length} occurrence{searchHits.length > 1 ? 's' : ''}</div>}
-          <div className="windows-tree">
+          <div className="windows-tree large-explorer">
             {visibleFolders.map(folder => {
               const open = expanded.includes(folder)
               const children = visibleFiles.filter(file => file.folder === folder)
@@ -402,14 +479,23 @@ export default function Home() {
         </article>
 
         <aside className="mission-panel">
-          <div className="mission-progress">MISSION 06 / 06 · FINAL VAULT · {Math.min(phase + 1, phases.length)}/{phases.length}</div>
+          <div className="mission-progress">ÉPREUVE 06 / 06 · FINAL VAULT · ÉTAPE {Math.min(phase + 1, phases.length)}/{phases.length}</div>
           <h2>{vaultOpen ? 'VAULT OUVERT' : currentPhase.title}</h2>
           <p>{vaultOpen ? 'Chaîne validée. Le laboratoire confirme uniquement une réussite interne au jeu.' : currentPhase.prompt}</p>
           {message && <div className={`feedback ${message.includes('ATTENTION') ? 'warning' : ''}`}>{message}</div>}
+          {phase === 2 && !vaultOpen && (
+            <div className="bruteforce-card">
+              <div className="bruteforce-title">BRUTEFORCE // SIMULATION</div>
+              <p>Le contrôle trouvé demande si tu veux activer le bruteforce. Ici, tout est simulé dans CyberVault : aucune cible réelle n'est contactée.</p>
+              <div className="bruteforce-meta"><span>FORMAT</span><strong>12 CHIFFRES</strong><span>CANDIDATS</span><strong>20</strong></div>
+              {!bruteForceDone && <button className="validate" onClick={startBruteforce} disabled={bruteForceActive}>{bruteForceActive ? 'SIMULATION EN COURS — ' + String(bruteForceDuration).padStart(2,'0') + ' MIN' : 'ACTIVER LE BRUTEFORCE ?'}</button>}
+              {bruteForceDone && <div className="bruteforce-result"><span>CODE DE SESSION</span><strong>{bruteForceCode}</strong><small>Résultat généré aléatoirement pour cette session.</small></div>}
+            </div>
+          )}
 
           {!vaultOpen && <div className="terminal mission-terminal">
             <div className="terminal-head">SIMULATOR // PROOF INPUT</div>
-            <div className="terminal-line"><span>lab@cybervault:~$</span><input value={answer} onChange={e => setAnswer(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') validateAnswer() }} placeholder="preuve exacte..." /></div>
+            <div className="terminal-line"><span>lab@cybervault:~$</span><input value={answer} onChange={e => setAnswer(phase === 3 ? e.target.value.replace(/\D/g, '').slice(0, 12) : e.target.value)} onKeyDown={e => { if (e.key === 'Enter') validateAnswer() }} placeholder="preuve exacte..." /></div>
             <button className="validate" onClick={validateAnswer}>VALIDER LA PREUVE →</button>
           </div>}
 
