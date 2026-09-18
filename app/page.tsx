@@ -311,28 +311,47 @@ export default function Home() {
       const base = 100000000000 + ((i * 731923 + 48271) % 900000000000)
       return String(base)
     })
-    const selected = candidates[Math.floor(Math.random() * candidates.length)]
+    const selectedIndex = Math.floor(Math.random() * candidates.length)
+    const selected = candidates[selectedIndex]
     const durationMinutes = 2 + Math.floor(Math.random() * 59)
+
     setBruteForceActive(true)
     setBruteForceDuration(durationMinutes)
     setBruteForceCode('')
+    setAnswer('')
     setTerminalOutput([
       '[SIM] bruteforce activé',
-      '[SIM] 20 candidats',
-      '[SIM] durée simulée : ' + String(durationMinutes).padStart(2, '0') + ' min'
+      '[SIM] 20 candidats chargés',
+      '[SIM] tests visibles dans la barre de preuve',
+      '[SIM] durée de session simulée : ' + String(durationMinutes).padStart(2, '0') + ' min',
     ])
 
-    window.setTimeout(() => {
-      setBruteForceCode(selected)
-      setBruteForceDone(true)
-      setBruteForceActive(false)
-      setTerminalOutput([
-        '[SIM] simulation terminée',
-        '[SIM] candidat validé : ' + selected,
-        '[SIM] durée simulée : ' + String(durationMinutes).padStart(2, '0') + ' min',
-        '[SIM] utilise ce résultat pour la validation interne',
+    let attempt = 0
+    const timer = window.setInterval(() => {
+      const candidate = candidates[attempt % candidates.length]
+      setAnswer(candidate)
+      setTerminalOutput(prev => [
+        ...prev.slice(-7),
+        '[SIM] test #' + String(attempt + 1).padStart(3, '0') + ' → ' + candidate,
       ])
-    }, 2200)
+      if (attempt % candidates.length === selectedIndex) {
+        window.clearInterval(timer)
+        setBruteForceCode(candidate)
+        setBruteForceDone(true)
+        setBruteForceActive(false)
+        setTerminalOutput(prev => [
+          ...prev.slice(-7),
+          '[SIM] ✓ combinaison correcte → ' + candidate,
+          '[SIM] durée simulée : ' + String(durationMinutes).padStart(2, '0') + ' min',
+          '[SIM] preuve prête pour validation',
+        ])
+        return
+      }
+      attempt += 1
+    }, 180)
+
+    // Sécurité UI : la simulation est toujours bornée et purement locale.
+    window.setTimeout(() => window.clearInterval(timer), 20000)
   }
 
   function validateAnswer() {
@@ -486,16 +505,16 @@ export default function Home() {
           {phase === 2 && !vaultOpen && (
             <div className="bruteforce-card">
               <div className="bruteforce-title">BRUTEFORCE // SIMULATION</div>
-              <p>Le contrôle trouvé demande si tu veux activer le bruteforce. Ici, tout est simulé dans CyberVault : aucune cible réelle n'est contactée.</p>
-              <div className="bruteforce-meta"><span>FORMAT</span><strong>12 CHIFFRES</strong><span>CANDIDATS</span><strong>20</strong></div>
-              {!bruteForceDone && <button className="validate" onClick={startBruteforce} disabled={bruteForceActive}>{bruteForceActive ? 'SIMULATION EN COURS — ' + String(bruteForceDuration).padStart(2,'0') + ' MIN' : 'ACTIVER LE BRUTEFORCE ?'}</button>}
+              <p>Le contrôle trouvé demande si tu veux activer le bruteforce. Les combinaisons sont testées directement dans la barre de preuve, une par une. Ici, tout est simulé dans CyberVault.</p>
+              <div className="bruteforce-meta"><span>FORMAT</span><strong>12 CHIFFRES</strong><span>CANDIDATS</span><strong>20</strong><span>ESSAIS</span><strong>SANS LIMITE</strong></div>
+              {!bruteForceDone && <button className="validate" onClick={startBruteforce} disabled={bruteForceActive}>{bruteForceActive ? 'TEST DES COMBINAISONS EN COURS…' : 'ACTIVER LE BRUTEFORCE ?'}</button>}
               {bruteForceDone && <div className="bruteforce-result"><span>CODE DE SESSION</span><strong>{bruteForceCode}</strong><small>Résultat généré aléatoirement pour cette session.</small></div>}
             </div>
           )}
 
           {!vaultOpen && <div className="terminal mission-terminal">
             <div className="terminal-head">SIMULATOR // PROOF INPUT</div>
-            <div className="terminal-line"><span>lab@cybervault:~$</span><input value={answer} onChange={e => setAnswer(phase === 3 ? e.target.value.replace(/\D/g, '').slice(0, 12) : e.target.value)} onKeyDown={e => { if (e.key === 'Enter') validateAnswer() }} placeholder="preuve exacte..." /></div>
+            <div className="terminal-line"><span>lab@cybervault:~$</span><input value={answer} onChange={e => setAnswer(phase === 3 ? e.target.value.replace(/\D/g, '').slice(0, 12) : e.target.value)} onKeyDown={e => { if (e.key === 'Enter') validateAnswer() }} placeholder={bruteForceActive ? 'test de combinaison en cours...' : 'preuve exacte...'} /></div>
             <button className="validate" onClick={validateAnswer}>VALIDER LA PREUVE →</button>
           </div>}
 
