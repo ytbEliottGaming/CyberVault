@@ -443,10 +443,10 @@ export default function Home() {
 
       <section className="mission-rail" aria-label="Progression des épreuves">
         {['ÉPREUVE 1','ÉPREUVE 2','ÉPREUVE 3','ÉPREUVE 4','ÉPREUVE 5','ÉPREUVE 6'].map((label, i) => (
-          <div key={label} className={`mission-step ${i === 5 ? 'current' : i < completed.length ? 'done' : 'locked'}`}>
+          <div key={label} className={`mission-step ${i === Math.min(5, completed.length) ? 'current' : i < completed.length ? 'done' : 'locked'}`}>
             <b>{String(i + 1).padStart(2, '0')}</b>
             <span>{label}</span>
-            <em>{i === 5 ? 'EN COURS' : i < completed.length ? 'TERMINÉE' : 'VERROUILLÉE'}</em>
+            <em>{i === Math.min(5, completed.length) ? 'EN COURS' : i < completed.length ? 'TERMINÉE' : 'VERROUILLÉE'}</em>
           </div>
         ))}
       </section>
@@ -479,7 +479,7 @@ export default function Home() {
         </article>
 
         <aside className="mission-panel">
-          <div className="mission-progress">ÉPREUVE 06 / 06 · FINAL VAULT · ÉTAPE {Math.min(phase + 1, phases.length)}/{phases.length}</div>
+          <div className="mission-progress">ÉPREUVE 01 / 06 · ENQUÊTE · ÉTAPE {Math.min(phase + 1, phases.length)}/{phases.length}</div>
           <h2>{vaultOpen ? 'VAULT OUVERT' : currentPhase.title}</h2>
           <p>{vaultOpen ? 'Chaîne validée. Le laboratoire confirme uniquement une réussite interne au jeu.' : currentPhase.prompt}</p>
           {message && <div className={`feedback ${message.includes('ATTENTION') ? 'warning' : ''}`}>{message}</div>}
