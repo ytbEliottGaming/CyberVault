@@ -327,6 +327,14 @@ export default function Home() {
     setTerminalOutput(['> command rejected', '[SIM] unknown command or invalid argument sequence'])
   }
 
+  function toggleFolder(folder: string) {
+    setExpanded(current =>
+      current.includes(folder)
+        ? current.filter(item => item !== folder)
+        : [...current, folder]
+    )
+  }
+
   function selectFile(file: SimFile) {
     setActiveFile(file)
     setQuery('')
